@@ -1,7 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:stripe_app/bloc/pagar/pagar_bloc.dart';
+import 'package:stripe_app/helpers/helpers.dart';
+import 'package:stripe_app/services/stripe_service.dart';
+import 'package:stripe_payment/stripe_payment.dart';
 
 class TotalPayButton extends StatelessWidget {
   const TotalPayButton({Key? key}) : super(key: key);
@@ -9,6 +14,8 @@ class TotalPayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
+    final pagarBloc = BlocProvider.of<PagarBloc>(context).state;
+
     return Container(
       width: width,
       height: 100,
@@ -26,8 +33,8 @@ class TotalPayButton extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
-              Text(
+            children: [
+              const Text(
                 'Total',
                 style: TextStyle(
                   fontSize: 20,
@@ -35,12 +42,18 @@ class TotalPayButton extends StatelessWidget {
                 ),
               ),
               Text(
-                '250.55 USD',
-                style: TextStyle(fontSize: 20),
+                '${pagarBloc.montoPagar} ${pagarBloc.moneda}',
+                style: const TextStyle(fontSize: 20),
               ),
             ],
           ),
-          _BtnPay(),
+          BlocBuilder<PagarBloc, PagarState>(
+            builder: (context, state) {
+              return _BtnPay(
+                state: state,
+              );
+            },
+          ),
         ],
       ),
     );
@@ -48,11 +61,15 @@ class TotalPayButton extends StatelessWidget {
 }
 
 class _BtnPay extends StatelessWidget {
-  const _BtnPay({Key? key}) : super(key: key);
+  final PagarState state;
+
+  const _BtnPay({Key? key, required this.state}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return true ? buildBotonTarjeta(context) : buildAppleAndGooglePay(context);
+    return state.tarjetaActiva
+        ? buildBotonTarjeta(context)
+        : buildAppleAndGooglePay(context);
   }
 
   Widget buildBotonTarjeta(BuildContext context) {
@@ -77,7 +94,37 @@ class _BtnPay extends StatelessWidget {
           )
         ],
       ),
-      onPressed: () {},
+      onPressed: () async {
+        mostrarLoading(context);
+        final stripService = StripeService();
+        final state = BlocProvider.of<PagarBloc>(context).state;
+        final tarjeta = state.tarjeta;
+        final mesAno = tarjeta!.expiracyDate.split('/');
+
+        final response = await stripService.pagarConTarjetaExistente(
+          amount: state.montoPagarString,
+          currency: state.moneda,
+          card: CreditCard(
+            number: tarjeta.cardNumber,
+            expMonth: int.parse(mesAno[0]),
+            expYear: int.parse(mesAno[1]),
+          ),
+        );
+        Navigator.pop(context);
+
+        if (response.ok) {
+          mostrarAlerta(context, 'Tarjeta Ok', 'Todo correcto');
+        } else {
+          mostrarAlerta(context, 'Algo salió mal', response.msg!);
+        }
+        Navigator.pop(context);
+
+        if (response.ok) {
+          mostrarAlerta(context, 'Tarjeta Ok', 'Todo correcto');
+        } else {
+          mostrarAlerta(context, 'Algo salió mal', response.msg!);
+        }
+      },
     );
   }
 
@@ -105,7 +152,15 @@ class _BtnPay extends StatelessWidget {
           )
         ],
       ),
-      onPressed: () {},
+      onPressed: () async {
+        final stripService = StripeService();
+        final state = BlocProvider.of<PagarBloc>(context).state;
+
+        final response = await stripService.pagarApplePayGooglePay(
+          amount: state.montoPagarString,
+          currency: state.moneda,
+        );
+      },
     );
   }
 }
